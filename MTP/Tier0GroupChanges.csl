@@ -1,0 +1,47 @@
+// Detects changes in Tier 0 group memberships
+// Command leverages MDI schema s
+// Execute from https://security.microsoft.com or through the MTP advanced hunting API
+let Events = materialize (
+IdentityDirectoryEvents
+| where ActionType == 'Group Membership changed'
+| extend ActivityType = iff(isnotempty(tostring(AdditionalFields['TO.GROUP'])),"Added Account", "Removed Account")
+| where isnotempty(AccountSid)
+);
+let Tier0Adds = (
+Events
+| where ActivityType == "Added Account"
+| extend TargetGroup = tostring(AdditionalFields['TO.GROUP'])
+| extend TargetAccount = AdditionalFields['TARGET_OBJECT.USER']
+| extend ActorName = AdditionalFields['ACTOR.ENTITY_USER']
+);
+let Tier0Removes = (
+Events
+| where ActivityType == "Removed Account"
+| extend TargetGroup = tostring(AdditionalFields['FROM.GROUP'])
+| extend TargetAccount = AdditionalFields['TARGET_OBJECT.USER']
+| extend ActorName = AdditionalFields['ACTOR.ENTITY_USER']
+);
+let Tier0Groups = datatable(TargetGroup:string)
+[
+'Enterprise Admins',
+'Domain Admin',
+'Domain Controllers'
+'Administrators',
+'Enterprise Key Admins',
+'Account Operators',
+'Organization Management',
+'Backup Operators',
+'RTCDomainServerAdmins',
+'ENTERPRISE DOMAIN CONTROLLERS',
+'Cert Publishers',
+'Schema Admins',
+'DnsAdmins',
+'Exchange Recipient Administrators',
+'Replicator',
+'Read-Only Domain Controllers',
+'Print Operators'
+];
+Tier0Groups
+| join (union Tier0Adds, Tier0Removes) on TargetGroup
+| project Timestamp, ActionType, ActivityType, ActorName, TargetAccount, TargetAccountUpn, TargetGroup
+// If you are setting up a detection rule in MTP, you'll need to add ReportId and AccountSid to the projected columns
